@@ -1,0 +1,57 @@
+{
+  "vfs_credentials": {
+    "email": "your_vfs_email@example.com",
+    "password": "your_vfs_password"
+  },
+  "email_config": {
+    "provider": "gmail",
+    "email": "your_email@gmail.com",
+    "password": "your_app_password",
+    "imap_server": "imap.gmail.com",
+    "imap_port": 993
+  },
+  "telegram": {
+    "bot_token": "YOUR_TELEGRAM_BOT_TOKEN",
+    "chat_id": "YOUR_CHAT_ID"
+  },
+  "appointment_criteria": {
+    "location": "Bursa",
+    "visa_type": "Tourist",
+    "number_of_people": 2
+  },
+  "applicants": [
+    {
+      "first_name": "Ahmet",
+      "last_name": "Yılmaz",
+      "tc_number": "12345678901",
+      "passport_number": "U12345678",
+      "birth_date": "01/01/1990",
+      "phone": "+905551234567",
+      "email": "ahmet@example.com"
+    },
+    {
+      "first_name": "Ayşe",
+      "last_name": "Yılmaz",
+      "tc_number": "98765432109",
+      "passport_number": "U98765432",
+      "birth_date": "15/05/1992",
+      "phone": "+905559876543",
+      "email": "ayse@example.com"
+    }
+  ],
+  "payment": {
+    "card_number": "1234567890123456",
+    "card_holder": "AHMET YILMAZ",
+    "expiry_month": "12",
+    "expiry_year": "2025",
+    "cvv": "123"
+  },
+  "settings": {
+    "polling_interval_minutes": 10,
+    "headless": true,
+    "screenshot_on_error": true,
+    "max_retries": 3,
+    "random_delay_min": 8,
+    "random_delay_max": 12
+  }
+}
