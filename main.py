@@ -84,10 +84,25 @@ class VisaBot:
                 imap_port=email_config['imap_port']
             )
             
-            # Initialize browser
+            # Initialize browser with proxy support
             logger.info("Initializing browser...")
+            
+            # Prepare proxy configuration
+            proxy_config = None
+            if self.config.get('proxy', {}).get('enabled', False):
+                proxy_config = {
+                    'server': self.config['proxy']['server'],
+                    'username': self.config['proxy'].get('username'),
+                    'password': self.config['proxy'].get('password')
+                }
+                logger.info(f"🌐 Proxy enabled: {proxy_config['server']}")
+            else:
+                logger.warning("⚠️  Proxy disabled - may trigger IP ban!")
+            
             self.browser_manager = BrowserManager(
-                headless=self.config['settings']['headless']
+                headless=self.config['settings']['headless'],
+                proxy_config=proxy_config,
+                clear_cache_on_start=self.config['settings'].get('clear_cache_on_start', True)
             )
             page = await self.browser_manager.start()
             

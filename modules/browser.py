@@ -1,9 +1,10 @@
 """
-Browser management with enhanced anti-detection and MacOS compatibility
-Refactored for: WAF/Cloudflare bypass, MacOS stability, Cookie injection
+Browser management with PROXY SUPPORT and enhanced anti-detection
+CRITICAL UPDATE: IP Ban bypass through proxy/VPN integration + cache clearing
 """
 import asyncio
 import json
+import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any
 from playwright.async_api import (
@@ -20,6 +21,8 @@ from utils.logger import logger
 class BrowserManager:
     """
     Enhanced browser manager with:
+    - PROXY/VPN SUPPORT for IP ban bypass (PRIMARY SOLUTION)
+    - Complete cache clearing on startup
     - Anti-detection features for WAF/Cloudflare bypass
     - MacOS stability (headless=False default)
     - Cookie injection for session persistence
@@ -40,7 +43,9 @@ class BrowserManager:
         self, 
         headless: bool = False,  # Changed default to False for MacOS stability
         user_data_dir: str = "./browser_data",
-        cookies_file: str = "cookies.json"
+        cookies_file: str = "cookies.json",
+        proxy_config: Optional[Dict[str, str]] = None,
+        clear_cache_on_start: bool = True
     ):
         """
         Initialize browser manager
@@ -49,11 +54,17 @@ class BrowserManager:
             headless: Run in headless mode (False recommended for MacOS)
             user_data_dir: Directory for browser data persistence
             cookies_file: Path to cookies file for session restoration
+            proxy_config: Proxy configuration dict with keys:
+                - server: Proxy server URL (e.g., "http://proxy.example.com:8080")
+                - username: Proxy username (optional)
+                - password: Proxy password (optional)
+            clear_cache_on_start: Clear all browser cache/data on startup (recommended for IP ban)
         """
         self.headless = headless
         self.user_data_dir = Path(user_data_dir)
-        self.user_data_dir.mkdir(exist_ok=True)
         self.cookies_file = Path(cookies_file)
+        self.proxy_config = proxy_config
+        self.clear_cache_on_start = clear_cache_on_start
         
         # Browser components
         self.playwright: Optional[Playwright] = None
@@ -61,11 +72,88 @@ class BrowserManager:
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
         
-        logger.info(f"🔧 Browser Manager initialized (headless={headless})")
+        # Clear cache on initialization if requested
+        if self.clear_cache_on_start:
+            self._clear_browser_cache()
+        
+        # Create user data directory
+        self.user_data_dir.mkdir(exist_ok=True)
+        
+        logger.info(f"🔧 Browser Manager initialized (headless={headless}, proxy={'enabled' if proxy_config else 'disabled'}, cache_clear={clear_cache_on_start})")
+    
+    def _clear_browser_cache(self):
+        """
+        CRITICAL: Clear all browser cache and persistent data
+        This ensures a completely fresh start and removes any residual tracking data
+        """
+        try:
+            logger.info("🧹 Clearing browser cache and persistent data...")
+            
+            # Clear user data directory
+            if self.user_data_dir.exists():
+                shutil.rmtree(self.user_data_dir, ignore_errors=True)
+                logger.success(f"✅ Cleared user data directory: {self.user_data_dir}")
+            
+            # Clear Playwright cache directories (common locations)
+            cache_dirs = [
+                Path.home() / ".cache" / "ms-playwright",
+                Path.home() / "Library" / "Caches" / "ms-playwright",  # MacOS
+                Path.home() / "Library" / "Application Support" / "ms-playwright",  # MacOS
+            ]
+            
+            for cache_dir in cache_dirs:
+                if cache_dir.exists():
+                    try:
+                        # Only clear browser-specific cache, not the entire Playwright installation
+                        for item in cache_dir.iterdir():
+                            if item.is_dir() and any(x in item.name.lower() for x in ['cache', 'session', 'storage']):
+                                shutil.rmtree(item, ignore_errors=True)
+                                logger.debug(f"Cleared cache: {item}")
+                    except Exception as e:
+                        logger.debug(f"Could not clear {cache_dir}: {e}")
+            
+            logger.success("✅ Browser cache cleared - starting with clean slate")
+            
+        except Exception as e:
+            logger.warning(f"⚠️  Could not fully clear cache: {str(e)}")
+    
+    def _build_proxy_config(self) -> Optional[Dict[str, str]]:
+        """
+        Build Playwright-compatible proxy configuration
+        
+        Returns:
+            dict: Proxy config for Playwright or None if no proxy configured
+        """
+        if not self.proxy_config:
+            return None
+        
+        try:
+            proxy_dict = {
+                'server': self.proxy_config.get('server', '')
+            }
+            
+            # Add authentication if provided
+            if self.proxy_config.get('username'):
+                proxy_dict['username'] = self.proxy_config['username']
+            
+            if self.proxy_config.get('password'):
+                proxy_dict['password'] = self.proxy_config['password']
+            
+            # Validate server format
+            if not proxy_dict['server']:
+                logger.warning("⚠️  Proxy server not specified, running without proxy")
+                return None
+            
+            logger.info(f"🌐 Proxy configured: {proxy_dict['server']}")
+            return proxy_dict
+            
+        except Exception as e:
+            logger.error(f"❌ Invalid proxy configuration: {str(e)}")
+            return None
     
     async def start(self) -> Page:
         """
-        Start browser with enhanced anti-detection configuration
+        Start browser with enhanced anti-detection configuration and PROXY SUPPORT
         
         Returns:
             Page: Playwright page object ready for automation
@@ -74,7 +162,7 @@ class BrowserManager:
             Exception: If browser fails to start
         """
         try:
-            logger.info("🚀 Starting browser with anti-detection features...")
+            logger.info("🚀 Starting browser with anti-detection features and proxy support...")
             
             # Start Playwright
             self.playwright = await async_playwright().start()
@@ -110,19 +198,52 @@ class BrowserManager:
                 '--disable-blink-features=AutomationControlled',  # Repeated for emphasis
                 '--exclude-switches=enable-automation',
                 '--disable-extensions',
+                
+                # Memory and performance
+                '--disable-background-networking',
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-breakpad',
+                '--disable-component-extensions-with-background-pages',
+                '--disable-features=TranslateUI',
+                '--disable-ipc-flooding-protection',
+                '--disable-renderer-backgrounding',
+                '--enable-features=NetworkService,NetworkServiceInProcess',
+                '--force-color-profile=srgb',
+                '--metrics-recording-only',
+                '--no-first-run',
+                '--password-store=basic',
+                '--use-mock-keychain',
+                
+                # Additional fingerprint randomization prevention
+                '--disable-features=AudioServiceOutOfProcess',
+                '--disable-features=IsolateOrigins',
+                '--disable-features=site-per-process',
             ]
             
-            # Launch Chromium with stealth configuration
-            self.browser = await self.playwright.chromium.launch(
-                headless=self.headless,
-                args=launch_args,
-                # Remove automation flags
-                ignore_default_args=['--enable-automation'],
-                # Slow down operations slightly for more human-like behavior
-                slow_mo=50  # 50ms delay between operations
-            )
+            # Build proxy configuration
+            proxy_settings = self._build_proxy_config()
             
-            logger.success(f"✅ Browser launched (headless={self.headless})")
+            # Launch Chromium with stealth configuration and PROXY
+            launch_options = {
+                'headless': self.headless,
+                'args': launch_args,
+                # Remove automation flags
+                'ignore_default_args': ['--enable-automation'],
+                # Slow down operations slightly for more human-like behavior
+                'slow_mo': 50,  # 50ms delay between operations
+            }
+            
+            # Add proxy if configured (CRITICAL FOR IP BAN BYPASS)
+            if proxy_settings:
+                launch_options['proxy'] = proxy_settings
+                logger.success(f"✅ Proxy enabled: {proxy_settings['server']}")
+            else:
+                logger.warning("⚠️  No proxy configured - using direct connection (may trigger IP ban)")
+            
+            self.browser = await self.playwright.chromium.launch(**launch_options)
+            
+            logger.success(f"✅ Browser launched (headless={self.headless}, proxy={'enabled' if proxy_settings else 'disabled'})")
             
             # Create context with cookie injection support
             await self._create_context()
@@ -140,7 +261,7 @@ class BrowserManager:
             # Set extra HTTP headers for realism
             await self._set_realistic_headers()
             
-            logger.success("✅ Browser ready with anti-detection features")
+            logger.success("✅ Browser ready with anti-detection features and proxy")
             return self.page
             
         except Exception as e:
@@ -226,6 +347,7 @@ class BrowserManager:
     async def _apply_stealth_scripts(self):
         """
         Apply JavaScript stealth scripts to evade detection
+        ENHANCED: Additional fingerprint masking and WebGL/Canvas randomization
         """
         try:
             await self.context.add_init_script("""
@@ -311,9 +433,94 @@ class BrowserManager:
                         saveData: false
                     })
                 });
+                
+                // WebGL fingerprint protection
+                const getParameter = WebGLRenderingContext.prototype.getParameter;
+                WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                    if (parameter === 37445) {
+                        return 'Intel Inc.';
+                    }
+                    if (parameter === 37446) {
+                        return 'Intel Iris OpenGL Engine';
+                    }
+                    return getParameter.call(this, parameter);
+                };
+                
+                // Canvas fingerprint protection
+                const toBlob = HTMLCanvasElement.prototype.toBlob;
+                const toDataURL = HTMLCanvasElement.prototype.toDataURL;
+                const getImageData = CanvasRenderingContext2D.prototype.getImageData;
+                
+                // Add slight noise to canvas operations
+                const noisify = function(canvas, context) {
+                    const shift = {
+                        'r': Math.floor(Math.random() * 10) - 5,
+                        'g': Math.floor(Math.random() * 10) - 5,
+                        'b': Math.floor(Math.random() * 10) - 5,
+                        'a': Math.floor(Math.random() * 10) - 5
+                    };
+                    
+                    const width = canvas.width;
+                    const height = canvas.height;
+                    const imageData = getImageData.apply(context, [0, 0, width, height]);
+                    
+                    for (let i = 0; i < height; i++) {
+                        for (let j = 0; j < width; j++) {
+                            const n = ((i * (width * 4)) + (j * 4));
+                            imageData.data[n + 0] = imageData.data[n + 0] + shift.r;
+                            imageData.data[n + 1] = imageData.data[n + 1] + shift.g;
+                            imageData.data[n + 2] = imageData.data[n + 2] + shift.b;
+                            imageData.data[n + 3] = imageData.data[n + 3] + shift.a;
+                        }
+                    }
+                    
+                    context.putImageData(imageData, 0, 0);
+                };
+                
+                // Battery API spoofing
+                Object.defineProperty(navigator, 'getBattery', {
+                    value: () => Promise.resolve({
+                        charging: true,
+                        chargingTime: 0,
+                        dischargingTime: Infinity,
+                        level: 1,
+                        addEventListener: () => {},
+                        removeEventListener: () => {},
+                        dispatchEvent: () => true
+                    })
+                });
+                
+                // Media devices spoofing
+                if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+                    const originalEnumerateDevices = navigator.mediaDevices.enumerateDevices;
+                    navigator.mediaDevices.enumerateDevices = function() {
+                        return originalEnumerateDevices.call(this).then(devices => {
+                            return devices.map(device => ({
+                                deviceId: device.deviceId,
+                                kind: device.kind,
+                                label: device.label,
+                                groupId: device.groupId,
+                                toJSON: () => ({
+                                    deviceId: device.deviceId,
+                                    kind: device.kind,
+                                    label: device.label,
+                                    groupId: device.groupId
+                                })
+                            }));
+                        });
+                    };
+                }
+                
+                // Remove automation indicators
+                delete navigator.__proto__.webdriver;
+                
+                // Override notification permission
+                Object.defineProperty(Notification, 'permission', {
+                    get: () => 'default'
+                });
             """)
             
-            logger.success("✅ Stealth scripts applied")
+            logger.success("✅ Enhanced stealth scripts applied")
             
         except Exception as e:
             logger.error(f"❌ Failed to apply stealth scripts: {str(e)}")
@@ -334,6 +541,7 @@ class BrowserManager:
                 'Sec-Fetch-Site': 'none',
                 'Sec-Fetch-User': '?1',
                 'Cache-Control': 'max-age=0',
+                'DNT': '1',  # Do Not Track
             }
             
             await self.page.set_extra_http_headers(headers)
@@ -553,7 +761,8 @@ class BrowserManager:
                 'title': await self.page.title(),
                 'viewport': self.page.viewport_size,
                 'cookies_count': len(await self.context.cookies()) if self.context else 0,
-                'user_agent': self.MACOS_USER_AGENT
+                'user_agent': self.MACOS_USER_AGENT,
+                'proxy_enabled': bool(self.proxy_config)
             }
             
             return info
@@ -564,4 +773,5 @@ class BrowserManager:
     def __repr__(self) -> str:
         """String representation of browser manager"""
         status = "active" if self.page else "inactive"
-        return f"<BrowserManager status={status} headless={self.headless}>"
+        proxy_status = "enabled" if self.proxy_config else "disabled"
+        return f"<BrowserManager status={status} headless={self.headless} proxy={proxy_status}>"

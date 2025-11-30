@@ -14,6 +14,12 @@
     "bot_token": "YOUR_TELEGRAM_BOT_TOKEN",
     "chat_id": "YOUR_CHAT_ID"
   },
+  "proxy": {
+    "enabled": true,
+    "server": "http://proxy.example.com:8080",
+    "username": "proxy_username",
+    "password": "proxy_password"
+  },
   "appointment_criteria": {
     "location": "Bursa",
     "visa_type": "Tourist",
@@ -48,10 +54,11 @@
   },
   "settings": {
     "polling_interval_minutes": 10,
-    "headless": true,
+    "headless": false,
     "screenshot_on_error": true,
     "max_retries": 3,
     "random_delay_min": 8,
-    "random_delay_max": 12
+    "random_delay_max": 12,
+    "clear_cache_on_start": true
   }
 }
